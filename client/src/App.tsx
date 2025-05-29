@@ -21,11 +21,12 @@ import {
 } from '@mui/icons-material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 
-import apiService, { FilterParams, DashboardSummary, CreationTrend, PriorityDistribution } from './services/apiService';
+import apiService, { FilterParams, DashboardSummary, CreationTrend, PriorityDistribution, ProjectStats } from './services/apiService';
 import FilterSidebar from './components/Sidebar/FilterSidebar';
 import ModernDashboardSummary from './components/Dashboard/ModernDashboardSummary';
 import EChartsTrendChart from './components/Charts/EChartsTrendChart';
 import EChartsPriorityPieChart from './components/Charts/EChartsPriorityPieChart';
+import EChartsProjectPieChart from './components/Charts/EChartsProjectPieChart';
 import DateRangeSelector, { DateTimeType } from './components/Common/DateRangeSelector';
 
 // 现代主题配置 - 低饱和度浅蓝色系
@@ -193,6 +194,7 @@ function App() {
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [trendData, setTrendData] = useState<CreationTrend[]>([]);
   const [priorityData, setPriorityData] = useState<PriorityDistribution[]>([]);
+  const [projectStats, setProjectStats] = useState<ProjectStats[]>([]);
 
   // 当前筛选参数
   const [currentFilters, setCurrentFilters] = useState<FilterParams>({});
@@ -230,6 +232,16 @@ function App() {
     }
   };
 
+  // 加载项目统计数据
+  const loadProjectStats = async (filters: FilterParams = {}) => {
+    try {
+      const projectStats = await apiService.fetchProjectStats(filters);
+      setProjectStats(projectStats);
+    } catch (error) {
+      console.error('加载项目统计数据失败:', error);
+    }
+  };
+
   // 处理筛选变化
   const handleFilterChange = async (filters: FilterParams) => {
     // 构建最终筛选条件，包含日期范围和时间类型
@@ -254,7 +266,8 @@ function App() {
     await Promise.all([
       loadDashboardSummary(finalFilters),
       loadTrendData(finalFilters),
-      loadPriorityData(finalFilters)
+      loadPriorityData(finalFilters),
+      loadProjectStats(finalFilters)
     ]);
   };
 
@@ -280,7 +293,8 @@ function App() {
     await Promise.all([
       loadDashboardSummary(filtersWithDate),
       loadTrendData(filtersWithDate),
-      loadPriorityData(filtersWithDate)
+      loadPriorityData(filtersWithDate),
+      loadProjectStats(filtersWithDate)
     ]);
   };
 
@@ -307,7 +321,8 @@ function App() {
     await Promise.all([
       loadDashboardSummary(newFilters),
       loadTrendData(newFilters),
-      loadPriorityData(newFilters)
+      loadPriorityData(newFilters),
+      loadProjectStats(newFilters)
     ]);
   };
 
@@ -334,7 +349,8 @@ function App() {
     await Promise.all([
       loadDashboardSummary(newFilters),
       loadTrendData(newFilters),
-      loadPriorityData(newFilters)
+      loadPriorityData(newFilters),
+      loadProjectStats(newFilters)
     ]);
   };
 
@@ -528,26 +544,12 @@ function App() {
                 />
               </Box>
               
-              {/* 右侧：预留给其他图表 */}
+              {/* 右侧：项目统计图表 */}
               <Box sx={{ flex: '0 0 48%' }}>
-                {/* 这里将来可以放其他图表 */}
-                <Card 
-                  elevation={1}
-                  sx={{ 
-                    p: 3, 
-                    height: 400, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 2
-                  }}
-                >
-                  <Typography variant="h6" sx={{ color: '#64748b' }}>
-                    预留图表位置
-                  </Typography>
-                </Card>
+                <EChartsProjectPieChart
+                  data={projectStats}
+                  loading={loading}
+                />
               </Box>
             </Box>
           </Container>
