@@ -78,17 +78,12 @@ class JiraDataService {
 
   // 构建项目筛选条件
   buildProjectFilter(projects) {
-    console.log('构建项目筛选条件:', projects);
-    
     if (!projects || !Array.isArray(projects) || projects.length === 0) {
-      console.log('项目筛选为空，返回空条件');
       return '';
     }
     
     const projectKeys = projects.map(key => `'${key}'`).join(',');
-    const filter = `AND p.pkey IN (${projectKeys})`;
-    console.log('生成的项目筛选条件:', filter);
-    return filter;
+    return `AND p.pkey IN (${projectKeys})`;
   }
 
   // 构建设计人员筛选条件
@@ -311,15 +306,10 @@ class JiraDataService {
   // 获取项目维度统计
   async getProjectStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
     try {
-      console.log('=== getProjectStats 调试 ===');
-      console.log('接收的参数:', { startDate, endDate, dateTimeType, issueTypes, projects, assignees });
-      
       const connection = await pool.getConnection();
       const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
       
-      console.log('生成的筛选条件:', filters);
-      
-      const sql = `
+      const [rows] = await connection.execute(`
         SELECT 
           p.ID,
           p.pname as project_name,
@@ -340,15 +330,7 @@ class JiraDataService {
         GROUP BY p.ID, p.pname, p.pkey, p.LEAD, p.PROJECTTYPE
         HAVING total_issues > 0
         ORDER BY total_issues DESC
-      `;
-      
-      console.log('完整SQL查询:', sql);
-      
-      const [rows] = await connection.execute(sql);
-      
-      console.log(`查询结果数量: ${rows.length}`);
-      console.log('前3个结果:', rows.slice(0, 3).map(r => ({ key: r.project_key, name: r.project_name, issues: r.total_issues })));
-      console.log('=========================');
+      `);
       
       connection.release();
       return rows;
