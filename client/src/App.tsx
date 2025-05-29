@@ -14,11 +14,13 @@ import {
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 
-import apiService, { FilterParams, DashboardSummary, CreationTrend, PriorityDistribution, ProjectStats } from './services/apiService';
+import apiService, { FilterParams, DashboardSummary, CreationTrend, PriorityDistribution, ProjectStats, DesignerWorkload, DesignerWorkHours } from './services/apiService';
 import ModernDashboardSummary from './components/Dashboard/ModernDashboardSummary';
 import EChartsTrendChart from './components/Charts/EChartsTrendChart';
 import EChartsPriorityPieChart from './components/Charts/EChartsPriorityPieChart';
 import EChartsProjectPieChart from './components/Charts/EChartsProjectPieChart';
+import EChartsDesignerBarChart from './components/Charts/EChartsDesignerBarChart';
+import EChartsDesignerWorkHoursChart from './components/Charts/EChartsDesignerWorkHoursChart';
 import DateRangeSelector, { DateTimeType } from './components/Common/DateRangeSelector';
 
 // 现代主题配置 - 低饱和度浅蓝色系
@@ -173,6 +175,8 @@ function App() {
   const [trendData, setTrendData] = useState<CreationTrend[]>([]);
   const [priorityData, setPriorityData] = useState<PriorityDistribution[]>([]);
   const [projectStats, setProjectStats] = useState<ProjectStats[]>([]);
+  const [designerWorkload, setDesignerWorkload] = useState<DesignerWorkload[]>([]);
+  const [designerWorkHours, setDesignerWorkHours] = useState<DesignerWorkHours[]>([]);
 
   // 当前筛选参数
   const [currentFilters, setCurrentFilters] = useState<FilterParams>({});
@@ -220,6 +224,26 @@ function App() {
     }
   };
 
+  // 加载设计师工作量数据
+  const loadDesignerWorkload = async (filters: FilterParams = {}) => {
+    try {
+      const designerWorkload = await apiService.fetchDesignerWorkloadStats(filters);
+      setDesignerWorkload(designerWorkload);
+    } catch (error) {
+      console.error('加载设计师工作量数据失败:', error);
+    }
+  };
+
+  // 加载设计师工作时间数据
+  const loadDesignerWorkHours = async (filters: FilterParams = {}) => {
+    try {
+      const designerWorkHours = await apiService.fetchDesignerWorkHoursStats(filters);
+      setDesignerWorkHours(designerWorkHours);
+    } catch (error) {
+      console.error('加载设计师工作时间数据失败:', error);
+    }
+  };
+
   // 处理筛选变化
   const handleFilterChange = async (filters: FilterParams) => {
     // 构建最终筛选条件，包含日期范围和时间类型
@@ -245,7 +269,9 @@ function App() {
       loadDashboardSummary(finalFilters),
       loadTrendData(finalFilters),
       loadPriorityData(finalFilters),
-      loadProjectStats(finalFilters)
+      loadProjectStats(finalFilters),
+      loadDesignerWorkload(finalFilters),
+      loadDesignerWorkHours(finalFilters)
     ]);
   };
 
@@ -272,7 +298,9 @@ function App() {
       loadDashboardSummary(filtersWithDate),
       loadTrendData(filtersWithDate),
       loadPriorityData(filtersWithDate),
-      loadProjectStats(filtersWithDate)
+      loadProjectStats(filtersWithDate),
+      loadDesignerWorkload(filtersWithDate),
+      loadDesignerWorkHours(filtersWithDate)
     ]);
   };
 
@@ -300,7 +328,9 @@ function App() {
       loadDashboardSummary(newFilters),
       loadTrendData(newFilters),
       loadPriorityData(newFilters),
-      loadProjectStats(newFilters)
+      loadProjectStats(newFilters),
+      loadDesignerWorkload(newFilters),
+      loadDesignerWorkHours(newFilters)
     ]);
   };
 
@@ -328,7 +358,9 @@ function App() {
       loadDashboardSummary(newFilters),
       loadTrendData(newFilters),
       loadPriorityData(newFilters),
-      loadProjectStats(newFilters)
+      loadProjectStats(newFilters),
+      loadDesignerWorkload(newFilters),
+      loadDesignerWorkHours(newFilters)
     ]);
   };
 
@@ -513,6 +545,31 @@ function App() {
                 <EChartsProjectPieChart
                   data={projectStats}
                   loading={loading}
+                />
+              </Box>
+            </Box>
+
+            <Box sx={{ mb: 4, display: 'flex', gap: 3 }}>
+              {/* 左侧：设计师工作量图表 */}
+              <Box sx={{ flex: '0 0 48%' }}>
+                <EChartsDesignerBarChart
+                  data={designerWorkload}
+                  loading={loading}
+                />
+              </Box>
+              
+              {/* 右侧：设计师工时图表 */}
+              <Box sx={{ flex: '0 0 48%' }}>
+                <EChartsDesignerWorkHoursChart
+                  data={designerWorkHours}
+                  loading={loading}
+                  filters={{
+                    startDate,
+                    endDate,
+                    dateTimeType,
+                    issueTypes: requirementTypesOnly ? ['需求'] : null,
+                    projects: cwProjectsOnly ? CW_PROJECT_IDS : null
+                  }}
                 />
               </Box>
             </Box>

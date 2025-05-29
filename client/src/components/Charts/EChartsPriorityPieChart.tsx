@@ -50,7 +50,7 @@ const EChartsPriorityPieChart: React.FC<EChartsPriorityPieChartProps> = ({
     return {
       title: {
         text: '需求优先级分布',
-        left: 'left',
+        left: 24,
         textStyle: {
           fontSize: 18,
           fontWeight: 600,

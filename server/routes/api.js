@@ -236,6 +236,36 @@ router.get('/assignees/workload-stats', handleAsync(async (req, res) => {
   });
 }));
 
+// 获取设计人员工作量统计
+router.get('/designers/workload-stats', handleAsync(async (req, res) => {
+  const { startDate, endDate, dateTimeType = 'created', issueTypes, projects, assignees } = req.query;
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+  const stats = await jiraDataService.getDesignerWorkloadStats(startDate, endDate, dateTimeType, parsedIssueTypes, parsedProjects, parsedAssignees);
+  
+  res.json({
+    success: true,
+    data: stats,
+    message: '获取设计人员工作量统计成功'
+  });
+}));
+
+// 获取设计人员工时统计
+router.get('/designers/workhours-stats', handleAsync(async (req, res) => {
+  const { startDate, endDate, dateTimeType = 'created', issueTypes, projects, assignees } = req.query;
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+  const stats = await jiraDataService.getDesignerWorkHoursStats(startDate, endDate, dateTimeType, parsedIssueTypes, parsedProjects, parsedAssignees);
+  
+  res.json({
+    success: true,
+    data: stats,
+    message: '获取设计人员工时统计成功'
+  });
+}));
+
 // 获取需求历史变更统计
 router.get('/issues/history-stats', handleAsync(async (req, res) => {
   const { startDate, endDate, issueTypes } = req.query;
@@ -261,6 +291,50 @@ router.get('/health', handleAsync(async (req, res) => {
       version: process.version
     },
     message: '服务运行正常'
+  });
+}));
+
+// 获取指定设计人员的详细issue信息
+router.get('/designers/:designerName/issues', handleAsync(async (req, res) => {
+  const { designerName } = req.params;
+  const { 
+    startDate, 
+    endDate, 
+    dateTimeType = 'created',
+    issueTypes,
+    projects,
+    assignees
+  } = req.query;
+
+  console.log('API: 获取设计人员详细issue信息', {
+    designerName,
+    startDate,
+    endDate,
+    dateTimeType,
+    issueTypes,
+    projects,
+    assignees
+  });
+
+  // 使用统一的参数解析函数
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+
+  const issueDetails = await jiraDataService.getDesignerIssueDetails(
+    decodeURIComponent(designerName),
+    startDate,
+    endDate,
+    dateTimeType,
+    parsedIssueTypes,
+    parsedProjects,
+    parsedAssignees
+  );
+
+  res.json({
+    success: true,
+    data: issueDetails,
+    message: `成功获取${designerName}的详细issue信息`
   });
 }));
 

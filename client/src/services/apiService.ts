@@ -164,6 +164,33 @@ export interface HistoryStats {
   change_count: number;
 }
 
+export interface DesignerWorkload {
+  designer_name: string;
+  designed_issues_count: number;
+}
+
+export interface DesignerWorkHours {
+  designer_name: string;
+  total_work_hours: number;
+}
+
+// 设计人员详细issue信息接口
+export interface DesignerIssueDetail {
+  issue_id: number;
+  issue_key: string;
+  issue_title: string;
+  created_date: string;
+  updated_date: string;
+  project_name: string;
+  project_key: string;
+  issue_type: string;
+  status: string;
+  priority: string;
+  assignee: string;
+  designer_name: string;
+  work_hours: number;
+}
+
 // API服务类
 class ApiService {
   
@@ -277,10 +304,34 @@ class ApiService {
     return response.data.data;
   }
 
+  // 获取设计人员工作量统计
+  async fetchDesignerWorkloadStats(filters?: FilterParams): Promise<DesignerWorkload[]> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<DesignerWorkload[]>>(`/designers/workload-stats${queryParams}`);
+    return response.data.data;
+  }
+
+  // 获取设计人员工时统计
+  async fetchDesignerWorkHoursStats(filters?: FilterParams): Promise<DesignerWorkHours[]> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<DesignerWorkHours[]>>(`/designers/workhours-stats${queryParams}`);
+    return response.data.data;
+  }
+
   // 健康检查
   async healthCheck(): Promise<any> {
     const response = await apiClient.get('/health');
     return response.data;
+  }
+
+  // 获取指定设计人员的详细issue信息
+  async getDesignerIssueDetails(
+    designerName: string,
+    filters: FilterParams = {}
+  ): Promise<DesignerIssueDetail[]> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<DesignerIssueDetail[]>>(`/designers/${encodeURIComponent(designerName)}/issues${queryParams}`);
+    return response.data.data;
   }
 }
 

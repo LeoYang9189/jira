@@ -755,6 +755,470 @@ class JiraDataService {
       throw error;
     }
   }
+
+  // 获取设计人员工作量统计
+  async getDesignerWorkloadStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      const connection = await pool.getConnection();
+      
+      // 根据时间类型构建不同的查询策略
+      let timeFilter = '';
+      let baseQuery = '';
+      
+      if (dateTimeType === 'created') {
+        // 基于issue创建时间的筛选
+        const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
+        
+        baseQuery = `
+          SELECT 
+            ci.NEWSTRING as designer_name,
+            COUNT(DISTINCT cg.issueid) as designed_issues_count
+          FROM changegroup cg
+          INNER JOIN changeitem ci ON cg.ID = ci.groupid
+          INNER JOIN jiraissue j ON cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          WHERE ci.FIELDTYPE = 'custom' 
+            AND ci.FIELD = '设计人员'
+            AND ci.NEWSTRING IS NOT NULL 
+            AND ci.NEWSTRING != ''
+            ${filters}
+          GROUP BY ci.NEWSTRING
+          ORDER BY designed_issues_count DESC
+          LIMIT 20
+        `;
+      } else {
+        // 基于自定义时间字段的筛选
+        const fieldNameMap = {
+          'completed_design': '完成时间(设计)',
+          'closed': '关闭时间', 
+          'actual_release': '实际发布日'
+        };
+        
+        const fieldName = fieldNameMap[dateTimeType];
+        if (!fieldName) {
+          connection.release();
+          return [];
+        }
+        
+        // 构建项目和类型筛选条件
+        const projectFilter = this.buildProjectFilter(projects);
+        const typeFilter = this.buildIssueTypeFilter(issueTypes);
+        const assigneeFilter = this.buildAssigneeFilter(assignees);
+        
+        // 构建时间筛选条件
+        if (startDate && endDate) {
+          timeFilter = `AND time_cg.CREATED BETWEEN '${startDate}' AND '${endDate} 23:59:59'`;
+        } else if (startDate) {
+          timeFilter = `AND time_cg.CREATED >= '${startDate}'`;
+        } else if (endDate) {
+          timeFilter = `AND time_cg.CREATED <= '${endDate} 23:59:59'`;
+        }
+        
+        baseQuery = `
+          SELECT 
+            ci.NEWSTRING as designer_name,
+            COUNT(DISTINCT cg.issueid) as designed_issues_count
+          FROM changegroup cg
+          INNER JOIN changeitem ci ON cg.ID = ci.groupid
+          INNER JOIN jiraissue j ON cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          WHERE ci.FIELDTYPE = 'custom' 
+            AND ci.FIELD = '设计人员'
+            AND ci.NEWSTRING IS NOT NULL 
+            AND ci.NEWSTRING != ''
+            AND cg.issueid IN (
+              SELECT DISTINCT time_cg.issueid 
+              FROM changegroup time_cg 
+              INNER JOIN changeitem time_ci ON time_cg.ID = time_ci.groupid 
+              INNER JOIN jiraissue time_j ON time_cg.issueid = time_j.ID
+              LEFT JOIN project time_p ON time_j.PROJECT = time_p.ID
+              WHERE time_ci.FIELD = '${fieldName}' 
+                AND time_ci.FIELDTYPE = 'custom'
+                AND time_ci.NEWSTRING IS NOT NULL 
+                AND time_ci.NEWSTRING != ''
+                ${timeFilter}
+                ${projectFilter.replace(/p\./g, 'time_p.')}
+                ${typeFilter.replace(/j\./g, 'time_j.')}
+                ${assigneeFilter.replace(/j\./g, 'time_j.')}
+            )
+            ${projectFilter}
+            ${typeFilter}  
+            ${assigneeFilter}
+          GROUP BY ci.NEWSTRING
+          ORDER BY designed_issues_count DESC
+          LIMIT 20
+        `;
+      }
+      
+      console.log('设计人员统计查询:', baseQuery);
+      
+      const [rows] = await connection.execute(baseQuery);
+      
+      connection.release();
+      
+      // 返回格式化的结果
+      return rows.map(row => ({
+        designer_name: row.designer_name || '未设置',
+        designed_issues_count: parseInt(row.designed_issues_count) || 0
+      }));
+    } catch (error) {
+      console.error('获取设计人员工作量统计失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取设计人员对应的实际开发工时统计
+  async getDesignerWorkHoursStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      const connection = await pool.getConnection();
+      
+      // 根据时间类型构建不同的查询策略
+      let timeFilter = '';
+      let baseQuery = '';
+      
+      if (dateTimeType === 'created') {
+        // 基于issue创建时间的筛选
+        const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
+        
+        baseQuery = `
+          SELECT 
+            designer_ci.NEWSTRING as designer_name,
+            SUM(CAST(latest_workhours.latest_hours AS DECIMAL(10,2))) as total_work_hours
+          FROM changegroup designer_cg
+          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
+          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          INNER JOIN (
+            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
+            SELECT 
+              cg1.issueid,
+              ci1.NEWSTRING as latest_hours
+            FROM changegroup cg1
+            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+            WHERE ci1.FIELDTYPE = 'custom' 
+              AND ci1.FIELD = '实际开发工时(H)'
+              AND ci1.NEWSTRING IS NOT NULL 
+              AND ci1.NEWSTRING != ''
+              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+              AND cg1.CREATED = (
+                SELECT MAX(cg2.CREATED)
+                FROM changegroup cg2
+                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+                WHERE ci2.FIELDTYPE = 'custom' 
+                  AND ci2.FIELD = '实际开发工时(H)'
+                  AND ci2.NEWSTRING IS NOT NULL 
+                  AND ci2.NEWSTRING != ''
+                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+                  AND cg2.issueid = cg1.issueid
+              )
+          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
+          WHERE designer_ci.FIELDTYPE = 'custom' 
+            AND designer_ci.FIELD = '设计人员'
+            AND designer_ci.NEWSTRING IS NOT NULL 
+            AND designer_ci.NEWSTRING != ''
+            ${filters}
+          GROUP BY designer_ci.NEWSTRING
+          HAVING total_work_hours > 0
+          ORDER BY total_work_hours DESC
+          LIMIT 20
+        `;
+      } else {
+        // 基于自定义时间字段的筛选
+        const fieldNameMap = {
+          'completed_design': '完成时间(设计)',
+          'closed': '关闭时间', 
+          'actual_release': '实际发布日'
+        };
+        
+        const fieldName = fieldNameMap[dateTimeType];
+        if (!fieldName) {
+          connection.release();
+          return [];
+        }
+        
+        // 构建项目和类型筛选条件
+        const projectFilter = this.buildProjectFilter(projects);
+        const typeFilter = this.buildIssueTypeFilter(issueTypes);
+        const assigneeFilter = this.buildAssigneeFilter(assignees);
+        
+        // 构建时间筛选条件
+        if (startDate && endDate) {
+          timeFilter = `AND time_cg.CREATED BETWEEN '${startDate}' AND '${endDate} 23:59:59'`;
+        } else if (startDate) {
+          timeFilter = `AND time_cg.CREATED >= '${startDate}'`;
+        } else if (endDate) {
+          timeFilter = `AND time_cg.CREATED <= '${endDate} 23:59:59'`;
+        }
+        
+        baseQuery = `
+          SELECT 
+            designer_ci.NEWSTRING as designer_name,
+            SUM(CAST(latest_workhours.latest_hours AS DECIMAL(10,2))) as total_work_hours
+          FROM changegroup designer_cg
+          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
+          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          INNER JOIN (
+            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
+            SELECT 
+              cg1.issueid,
+              ci1.NEWSTRING as latest_hours
+            FROM changegroup cg1
+            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+            WHERE ci1.FIELDTYPE = 'custom' 
+              AND ci1.FIELD = '实际开发工时(H)'
+              AND ci1.NEWSTRING IS NOT NULL 
+              AND ci1.NEWSTRING != ''
+              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+              AND cg1.CREATED = (
+                SELECT MAX(cg2.CREATED)
+                FROM changegroup cg2
+                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+                WHERE ci2.FIELDTYPE = 'custom' 
+                  AND ci2.FIELD = '实际开发工时(H)'
+                  AND ci2.NEWSTRING IS NOT NULL 
+                  AND ci2.NEWSTRING != ''
+                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+                  AND cg2.issueid = cg1.issueid
+              )
+          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
+          WHERE designer_ci.FIELDTYPE = 'custom' 
+            AND designer_ci.FIELD = '设计人员'
+            AND designer_ci.NEWSTRING IS NOT NULL 
+            AND designer_ci.NEWSTRING != ''
+            AND designer_cg.issueid IN (
+              SELECT DISTINCT time_cg.issueid 
+              FROM changegroup time_cg 
+              INNER JOIN changeitem time_ci ON time_cg.ID = time_ci.groupid 
+              INNER JOIN jiraissue time_j ON time_cg.issueid = time_j.ID
+              LEFT JOIN project time_p ON time_j.PROJECT = time_p.ID
+              WHERE time_ci.FIELD = '${fieldName}' 
+                AND time_ci.FIELDTYPE = 'custom'
+                AND time_ci.NEWSTRING IS NOT NULL 
+                AND time_ci.NEWSTRING != ''
+                ${timeFilter}
+                ${projectFilter.replace(/p\./g, 'time_p.')}
+                ${typeFilter.replace(/j\./g, 'time_j.')}
+                ${assigneeFilter.replace(/j\./g, 'time_j.')}
+            )
+            ${projectFilter}
+            ${typeFilter}  
+            ${assigneeFilter}
+          GROUP BY designer_ci.NEWSTRING
+          HAVING total_work_hours > 0
+          ORDER BY total_work_hours DESC
+          LIMIT 20
+        `;
+      }
+      
+      console.log('设计人员工时统计查询(修复重复计算):', baseQuery);
+      
+      const [rows] = await connection.execute(baseQuery);
+      
+      connection.release();
+      
+      // 返回格式化的结果
+      return rows.map(row => ({
+        designer_name: row.designer_name || '未设置',
+        total_work_hours: parseFloat(row.total_work_hours) || 0
+      }));
+    } catch (error) {
+      console.error('获取设计人员工时统计失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取指定设计人员的详细issue信息
+  async getDesignerIssueDetails(designerName, startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      const connection = await pool.getConnection();
+      
+      // 根据时间类型构建不同的查询策略
+      let timeFilter = '';
+      let baseQuery = '';
+      
+      if (dateTimeType === 'created') {
+        // 基于issue创建时间的筛选
+        const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
+        
+        baseQuery = `
+          SELECT DISTINCT
+            j.ID as issue_id,
+            j.pkey as issue_key,
+            j.SUMMARY as issue_title,
+            j.CREATED as created_date,
+            j.UPDATED as updated_date,
+            p.pname as project_name,
+            p.pkey as project_key,
+            it.pname as issue_type,
+            s.pname as status,
+            prio.pname as priority,
+            j.ASSIGNEE as assignee,
+            designer_ci.NEWSTRING as designer_name,
+            CAST(latest_workhours.latest_hours AS DECIMAL(10,2)) as work_hours
+          FROM changegroup designer_cg
+          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
+          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          LEFT JOIN issuetype it ON j.issuetype = it.ID
+          LEFT JOIN issuestatus s ON j.issuestatus = s.ID
+          LEFT JOIN priority prio ON j.PRIORITY = prio.ID
+          INNER JOIN (
+            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
+            SELECT 
+              cg1.issueid,
+              ci1.NEWSTRING as latest_hours
+            FROM changegroup cg1
+            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+            WHERE ci1.FIELDTYPE = 'custom' 
+              AND ci1.FIELD = '实际开发工时(H)'
+              AND ci1.NEWSTRING IS NOT NULL 
+              AND ci1.NEWSTRING != ''
+              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+              AND cg1.CREATED = (
+                SELECT MAX(cg2.CREATED)
+                FROM changegroup cg2
+                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+                WHERE ci2.FIELDTYPE = 'custom' 
+                  AND ci2.FIELD = '实际开发工时(H)'
+                  AND ci2.NEWSTRING IS NOT NULL 
+                  AND ci2.NEWSTRING != ''
+                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+                  AND cg2.issueid = cg1.issueid
+              )
+          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
+          WHERE designer_ci.FIELDTYPE = 'custom' 
+            AND designer_ci.FIELD = '设计人员'
+            AND designer_ci.NEWSTRING = '${designerName}'
+            ${filters}
+          ORDER BY work_hours DESC, j.CREATED DESC
+        `;
+      } else {
+        // 基于自定义时间字段的筛选
+        const fieldNameMap = {
+          'completed_design': '完成时间(设计)',
+          'closed': '关闭时间', 
+          'actual_release': '实际发布日'
+        };
+        
+        const fieldName = fieldNameMap[dateTimeType];
+        if (!fieldName) {
+          connection.release();
+          return [];
+        }
+        
+        // 构建项目和类型筛选条件
+        const projectFilter = this.buildProjectFilter(projects);
+        const typeFilter = this.buildIssueTypeFilter(issueTypes);
+        const assigneeFilter = this.buildAssigneeFilter(assignees);
+        
+        // 构建时间筛选条件
+        if (startDate && endDate) {
+          timeFilter = `AND time_cg.CREATED BETWEEN '${startDate}' AND '${endDate} 23:59:59'`;
+        } else if (startDate) {
+          timeFilter = `AND time_cg.CREATED >= '${startDate}'`;
+        } else if (endDate) {
+          timeFilter = `AND time_cg.CREATED <= '${endDate} 23:59:59'`;
+        }
+        
+        baseQuery = `
+          SELECT DISTINCT
+            j.ID as issue_id,
+            j.pkey as issue_key,
+            j.SUMMARY as issue_title,
+            j.CREATED as created_date,
+            j.UPDATED as updated_date,
+            p.pname as project_name,
+            p.pkey as project_key,
+            it.pname as issue_type,
+            s.pname as status,
+            prio.pname as priority,
+            j.ASSIGNEE as assignee,
+            designer_ci.NEWSTRING as designer_name,
+            CAST(latest_workhours.latest_hours AS DECIMAL(10,2)) as work_hours
+          FROM changegroup designer_cg
+          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
+          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          LEFT JOIN issuetype it ON j.issuetype = it.ID
+          LEFT JOIN issuestatus s ON j.issuestatus = s.ID
+          LEFT JOIN priority prio ON j.PRIORITY = prio.ID
+          INNER JOIN (
+            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
+            SELECT 
+              cg1.issueid,
+              ci1.NEWSTRING as latest_hours
+            FROM changegroup cg1
+            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+            WHERE ci1.FIELDTYPE = 'custom' 
+              AND ci1.FIELD = '实际开发工时(H)'
+              AND ci1.NEWSTRING IS NOT NULL 
+              AND ci1.NEWSTRING != ''
+              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+              AND cg1.CREATED = (
+                SELECT MAX(cg2.CREATED)
+                FROM changegroup cg2
+                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+                WHERE ci2.FIELDTYPE = 'custom' 
+                  AND ci2.FIELD = '实际开发工时(H)'
+                  AND ci2.NEWSTRING IS NOT NULL 
+                  AND ci2.NEWSTRING != ''
+                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
+                  AND cg2.issueid = cg1.issueid
+              )
+          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
+          WHERE designer_ci.FIELDTYPE = 'custom' 
+            AND designer_ci.FIELD = '设计人员'
+            AND designer_ci.NEWSTRING = '${designerName}'
+            AND designer_cg.issueid IN (
+              SELECT DISTINCT time_cg.issueid 
+              FROM changegroup time_cg 
+              INNER JOIN changeitem time_ci ON time_cg.ID = time_ci.groupid 
+              INNER JOIN jiraissue time_j ON time_cg.issueid = time_j.ID
+              LEFT JOIN project time_p ON time_j.PROJECT = time_p.ID
+              WHERE time_ci.FIELD = '${fieldName}' 
+                AND time_ci.FIELDTYPE = 'custom'
+                AND time_ci.NEWSTRING IS NOT NULL 
+                AND time_ci.NEWSTRING != ''
+                ${timeFilter}
+                ${projectFilter.replace(/p\./g, 'time_p.')}
+                ${typeFilter.replace(/j\./g, 'time_j.')}
+                ${assigneeFilter.replace(/j\./g, 'time_j.')}
+            )
+            ${projectFilter}
+            ${typeFilter}  
+            ${assigneeFilter}
+          ORDER BY work_hours DESC, j.CREATED DESC
+        `;
+      }
+      
+      console.log('设计人员详细issue查询(修复重复计算):', baseQuery);
+      
+      const [rows] = await connection.execute(baseQuery);
+      
+      connection.release();
+      
+      // 返回格式化的结果
+      return rows.map(row => ({
+        issue_id: row.issue_id,
+        issue_key: row.issue_key,
+        issue_title: row.issue_title || '无标题',
+        created_date: row.created_date,
+        updated_date: row.updated_date,
+        project_name: row.project_name || '未知项目',
+        project_key: row.project_key || '',
+        issue_type: row.issue_type || '未知类型',
+        status: row.status || '未知状态',
+        priority: row.priority || '未设置',
+        assignee: row.assignee || '未分配',
+        designer_name: row.designer_name,
+        work_hours: parseFloat(row.work_hours) || 0
+      }));
+    } catch (error) {
+      console.error('获取设计人员详细issue信息失败:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new JiraDataService(); 
