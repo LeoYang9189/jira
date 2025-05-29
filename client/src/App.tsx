@@ -6,23 +6,15 @@ import {
   Typography,
   Container,
   Box,
-  IconButton,
-  Fab,
   Backdrop,
   CircularProgress,
   Switch,
   FormControlLabel,
-  Stack,
-  Card
+  Stack
 } from '@mui/material';
-import {
-  Menu as MenuIcon,
-  FilterList as FilterListIcon
-} from '@mui/icons-material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 
 import apiService, { FilterParams, DashboardSummary, CreationTrend, PriorityDistribution, ProjectStats } from './services/apiService';
-import FilterSidebar from './components/Sidebar/FilterSidebar';
 import ModernDashboardSummary from './components/Dashboard/ModernDashboardSummary';
 import EChartsTrendChart from './components/Charts/EChartsTrendChart';
 import EChartsPriorityPieChart from './components/Charts/EChartsPriorityPieChart';
@@ -152,20 +144,7 @@ function App() {
     'TOPIDEAL'  // 卓志 (10108)
   ];
 
-  // 需求类型列表 - 包含所有需求相关的问题类型
-  const REQUIREMENT_TYPE_NAMES = [
-    '故事',                    // 20,612个
-    'Customer Requirement',    // 4,624个
-    'Epic',                    // 1,388个
-    '技术需求',                // 288个
-    'Functional Requirement',  // 49个
-    'UI Requirement',          // 23个
-    '需求建议',                // 4个
-    'Business Requirement',    // 2个
-    'Non-Functional Requirement' // 2个
-  ];
-
-  // 需求类型ID列表 - 对应上面的类型名称（转换为字符串以匹配API类型）
+  // 需求类型ID列表 - 对应需求相关的问题类型（转换为字符串以匹配API类型）
   const REQUIREMENT_TYPE_IDS = [
     '10001',  // 故事
     '10501',  // Customer Requirement
@@ -179,7 +158,6 @@ function App() {
   ];
 
   // 状态管理
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [globalLoading, setGlobalLoading] = useState(true);
   const [cwProjectsOnly, setCwProjectsOnly] = useState(true);
@@ -416,20 +394,6 @@ function App() {
           }}
         >
           <Toolbar>
-            <IconButton
-              edge="start"
-              onClick={() => setSidebarOpen(true)}
-              sx={{ 
-                mr: 2,
-                color: '#64748b',
-                '&:hover': {
-                  backgroundColor: '#f1f5f9',
-                  color: '#0284c7'
-                }
-              }}
-            >
-              <MenuIcon />
-            </IconButton>
             <Typography variant="h6" component="div" sx={{ fontWeight: 600, color: '#1e293b', mr: 3 }}>
               JIRA数据分析看板
             </Typography>
@@ -554,40 +518,6 @@ function App() {
             </Box>
           </Container>
         </Box>
-
-        {/* 筛选侧边栏 */}
-        <FilterSidebar
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          onFilterChange={handleFilterChange}
-          loading={loading}
-          cwProjectsOnly={cwProjectsOnly}
-          cwProjectIds={CW_PROJECT_IDS}
-          requirementTypesOnly={requirementTypesOnly}
-          requirementTypeIds={REQUIREMENT_TYPE_IDS}
-        />
-
-        {/* 移动端筛选按钮 */}
-        <Fab
-          color="primary"
-          size="medium"
-          onClick={() => setSidebarOpen(true)}
-          sx={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            zIndex: 1000,
-            background: '#7dd3fc',
-            color: '#0f172a',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-            '&:hover': {
-              background: '#0284c7',
-              color: '#ffffff'
-            }
-          }}
-        >
-          <FilterListIcon />
-        </Fab>
 
         {/* 加载遮罩 */}
         <Backdrop
