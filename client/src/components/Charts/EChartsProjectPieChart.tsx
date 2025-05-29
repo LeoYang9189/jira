@@ -104,21 +104,35 @@ const EChartsProjectPieChart: React.FC<EChartsProjectPieChartProps> = ({
       legend: {
         orient: 'vertical',
         left: 'left',
-        top: 'center',
+        top: '60px', // 向下移动，避免与标题重叠
         textStyle: {
           color: '#64748b',
-          fontSize: 14
+          fontSize: 13
         },
         formatter: (name: string) => {
           const item = chartData.find(d => d.name === name);
-          return `${name} (${item?.value || 0})`;
+          // 缩短显示文本，避免过长
+          const shortName = name.length > 12 ? name.substring(0, 12) + '...' : name;
+          return `${shortName} (${item?.value || 0})`;
         },
         type: 'scroll',
         pageIconColor: '#64748b',
         pageIconInactiveColor: '#cbd5e1',
         pageTextStyle: {
-          color: '#64748b'
-        }
+          color: '#64748b',
+          fontSize: 12
+        },
+        // 减少每页显示的数量
+        pageButtonItemGap: 5,
+        pageButtonGap: 10,
+        pageButtonPosition: 'end',
+        // 设置图例区域高度，限制显示数量
+        height: '280px',
+        // 每页最多显示8个项目
+        pageItemGap: 3,
+        itemGap: 8,
+        itemWidth: 14,
+        itemHeight: 14
       },
       series: [
         {

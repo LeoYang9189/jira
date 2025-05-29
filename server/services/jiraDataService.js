@@ -304,10 +304,10 @@ class JiraDataService {
   }
 
   // 获取项目维度统计
-  async getProjectStats(startDate = null, endDate = null, issueTypes = null) {
+  async getProjectStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
     try {
       const connection = await pool.getConnection();
-      const filters = this.buildFilters(startDate, endDate, 'created', issueTypes, null, null);
+      const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
       
       const [rows] = await connection.execute(`
         SELECT 
@@ -320,11 +320,15 @@ class JiraDataService {
           COUNT(CASE WHEN j.issuestatus = 6 THEN 1 END) as closed_issues,
           COUNT(CASE WHEN j.issuestatus = 5 THEN 1 END) as resolved_issues,
           COUNT(CASE WHEN j.issuestatus = 3 THEN 1 END) as in_progress_issues,
-          COUNT(CASE WHEN j.issuestatus = 1 THEN 1 END) as open_issues
+          COUNT(CASE WHEN j.issuestatus = 1 THEN 1 END) as open_issues,
+          COUNT(CASE WHEN s.pname IN ('完成', 'Done', 'Closed') THEN 1 END) as completed_issues,
+          COUNT(CASE WHEN s.pname LIKE '%进行%' OR s.pname = 'In Progress' THEN 1 END) as active_issues
         FROM project p
         LEFT JOIN jiraissue j ON p.ID = j.PROJECT
-        WHERE 1=1 ${filters.replace('j.CREATED', 'j.CREATED')}
+        LEFT JOIN issuestatus s ON j.issuestatus = s.ID
+        WHERE j.ID IS NOT NULL ${filters}
         GROUP BY p.ID, p.pname, p.pkey, p.LEAD, p.PROJECTTYPE
+        HAVING total_issues > 0
         ORDER BY total_issues DESC
       `);
       
@@ -337,10 +341,10 @@ class JiraDataService {
   }
 
   // 获取经办人工作量统计
-  async getAssigneeWorkloadStats(startDate = null, endDate = null, issueTypes = null) {
+  async getAssigneeWorkloadStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
     try {
       const connection = await pool.getConnection();
-      const filters = this.buildFilters(startDate, endDate, 'created', issueTypes, null, null);
+      const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
       
       const [rows] = await connection.execute(`
         SELECT 
@@ -351,6 +355,7 @@ class JiraDataService {
           SUM(CASE WHEN s.pname LIKE '%待%' OR s.pname = 'To Do' OR s.pname = 'Open' THEN 1 ELSE 0 END) as todo
         FROM jiraissue j
         LEFT JOIN issuestatus s ON j.issuestatus = s.ID
+        LEFT JOIN project p ON j.PROJECT = p.ID
         WHERE j.ASSIGNEE IS NOT NULL ${filters}
         GROUP BY j.ASSIGNEE
         HAVING total_assigned > 0

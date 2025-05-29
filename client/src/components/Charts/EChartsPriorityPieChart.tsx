@@ -85,15 +85,19 @@ const EChartsPriorityPieChart: React.FC<EChartsPriorityPieChartProps> = ({
       legend: {
         orient: 'vertical',
         left: 'left',
-        top: 'center',
+        top: '60px', // 向下移动，避免与标题重叠
         textStyle: {
           color: '#64748b',
-          fontSize: 14
+          fontSize: 13
         },
         formatter: (name: string) => {
           const item = chartData.find(d => d.name === name);
           return `${name} (${item?.value || 0})`;
-        }
+        },
+        // 优先级类型相对较少，不需要滚动
+        itemGap: 8,
+        itemWidth: 14,
+        itemHeight: 14
       },
       series: [
         {

@@ -175,9 +175,11 @@ router.get('/issues/resolution-time-stats', handleAsync(async (req, res) => {
 
 // 获取项目统计
 router.get('/projects/stats', handleAsync(async (req, res) => {
-  const { startDate, endDate, issueTypes } = req.query;
+  const { startDate, endDate, dateTimeType = 'created', issueTypes, projects, assignees } = req.query;
   const parsedIssueTypes = parseIssueTypes(issueTypes);
-  const stats = await jiraDataService.getProjectStats(startDate, endDate, parsedIssueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+  const stats = await jiraDataService.getProjectStats(startDate, endDate, dateTimeType, parsedIssueTypes, parsedProjects, parsedAssignees);
   
   res.json({
     success: true,
@@ -221,9 +223,11 @@ router.get('/assignees/list', handleAsync(async (req, res) => {
 
 // 获取经办人工作量统计
 router.get('/assignees/workload-stats', handleAsync(async (req, res) => {
-  const { startDate, endDate, issueTypes } = req.query;
+  const { startDate, endDate, dateTimeType = 'created', issueTypes, projects, assignees } = req.query;
   const parsedIssueTypes = parseIssueTypes(issueTypes);
-  const stats = await jiraDataService.getAssigneeWorkloadStats(startDate, endDate, parsedIssueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+  const stats = await jiraDataService.getAssigneeWorkloadStats(startDate, endDate, dateTimeType, parsedIssueTypes, parsedProjects, parsedAssignees);
   
   res.json({
     success: true,
