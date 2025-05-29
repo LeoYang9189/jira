@@ -175,15 +175,41 @@ router.get('/issues/resolution-time-stats', handleAsync(async (req, res) => {
 
 // 获取项目统计
 router.get('/projects/stats', handleAsync(async (req, res) => {
+  console.log('=== 项目统计API调试 ===');
+  console.log('原始查询参数:', req.query);
+  
   const { startDate, endDate, dateTimeType = 'created', issueTypes, projects, assignees } = req.query;
+  
+  console.log('提取的参数:');
+  console.log('- projects (原始):', projects);
+  console.log('- issueTypes (原始):', issueTypes);
+  console.log('- assignees (原始):', assignees);
+  
   const parsedIssueTypes = parseIssueTypes(issueTypes);
   const parsedProjects = parseProjects(projects);
   const parsedAssignees = parseAssignees(assignees);
+  
+  console.log('解析后的参数:');
+  console.log('- parsedProjects:', parsedProjects);
+  console.log('- parsedIssueTypes:', parsedIssueTypes);
+  console.log('- parsedAssignees:', parsedAssignees);
+  
   const stats = await jiraDataService.getProjectStats(startDate, endDate, dateTimeType, parsedIssueTypes, parsedProjects, parsedAssignees);
+  
+  console.log(`返回项目数量: ${stats.length}`);
+  console.log('========================');
   
   res.json({
     success: true,
     data: stats,
+    debug: {
+      originalParams: req.query,
+      parsedParams: {
+        parsedProjects,
+        parsedIssueTypes,
+        parsedAssignees
+      }
+    },
     message: '获取项目统计成功'
   });
 }));

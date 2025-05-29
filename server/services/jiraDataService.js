@@ -78,12 +78,17 @@ class JiraDataService {
 
   // 构建项目筛选条件
   buildProjectFilter(projects) {
+    console.log('构建项目筛选条件:', projects);
+    
     if (!projects || !Array.isArray(projects) || projects.length === 0) {
+      console.log('项目筛选为空，返回空条件');
       return '';
     }
     
     const projectKeys = projects.map(key => `'${key}'`).join(',');
-    return `AND p.pkey IN (${projectKeys})`;
+    const filter = `AND p.pkey IN (${projectKeys})`;
+    console.log('生成的项目筛选条件:', filter);
+    return filter;
   }
 
   // 构建设计人员筛选条件
@@ -306,10 +311,15 @@ class JiraDataService {
   // 获取项目维度统计
   async getProjectStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
     try {
+      console.log('=== getProjectStats 调试 ===');
+      console.log('接收的参数:', { startDate, endDate, dateTimeType, issueTypes, projects, assignees });
+      
       const connection = await pool.getConnection();
       const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
       
-      const [rows] = await connection.execute(`
+      console.log('生成的筛选条件:', filters);
+      
+      const sql = `
         SELECT 
           p.ID,
           p.pname as project_name,
@@ -323,14 +333,22 @@ class JiraDataService {
           COUNT(CASE WHEN j.issuestatus = 1 THEN 1 END) as open_issues,
           COUNT(CASE WHEN s.pname IN ('完成', 'Done', 'Closed') THEN 1 END) as completed_issues,
           COUNT(CASE WHEN s.pname LIKE '%进行%' OR s.pname = 'In Progress' THEN 1 END) as active_issues
-        FROM project p
-        LEFT JOIN jiraissue j ON p.ID = j.PROJECT
+        FROM jiraissue j
+        LEFT JOIN project p ON j.PROJECT = p.ID
         LEFT JOIN issuestatus s ON j.issuestatus = s.ID
-        WHERE j.ID IS NOT NULL ${filters}
+        WHERE 1=1 ${filters}
         GROUP BY p.ID, p.pname, p.pkey, p.LEAD, p.PROJECTTYPE
         HAVING total_issues > 0
         ORDER BY total_issues DESC
-      `);
+      `;
+      
+      console.log('完整SQL查询:', sql);
+      
+      const [rows] = await connection.execute(sql);
+      
+      console.log(`查询结果数量: ${rows.length}`);
+      console.log('前3个结果:', rows.slice(0, 3).map(r => ({ key: r.project_key, name: r.project_name, issues: r.total_issues })));
+      console.log('=========================');
       
       connection.release();
       return rows;
