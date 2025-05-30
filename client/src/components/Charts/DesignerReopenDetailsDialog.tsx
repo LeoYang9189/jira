@@ -19,26 +19,24 @@ import {
   IconButton,
   Tooltip
 } from '@mui/material';
-import { Close as CloseIcon, OpenInNew as OpenInNewIcon, AccessTime as AccessTimeIcon } from '@mui/icons-material';
-import { DesignerIssueDetail } from '../../services/apiService';
+import { Close as CloseIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
+import { DesignerReopenDetail } from '../../services/apiService';
 
-interface DesignerIssueDetailsDialogProps {
+interface DesignerReopenDetailsDialogProps {
   open: boolean;
   onClose: () => void;
   designerName: string;
-  totalIssueCount?: number;
-  totalWorkHours?: number;
-  issueDetails: DesignerIssueDetail[];
+  totalReopenCount: number;
+  reopenDetails: DesignerReopenDetail[];
   loading: boolean;
 }
 
-const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
+const DesignerReopenDetailsDialog: React.FC<DesignerReopenDetailsDialogProps> = ({
   open,
   onClose,
   designerName,
-  totalIssueCount,
-  totalWorkHours,
-  issueDetails,
+  totalReopenCount,
+  reopenDetails,
   loading
 }) => {
 
@@ -70,14 +68,14 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
     }
   };
 
-  // 工时颜色映射
-  const getWorkHoursColor = (hours: number) => {
-    if (hours >= 40) {
-      return 'error'; // 红色：工时很高
-    } else if (hours >= 20) {
-      return 'warning'; // 橙色：工时较高
-    } else if (hours >= 8) {
-      return 'info'; // 蓝色：正常工时
+  // Reopen次数颜色映射
+  const getReopenColor = (count: number) => {
+    if (count >= 5) {
+      return 'error'; // 红色：非常高
+    } else if (count >= 3) {
+      return 'warning'; // 橙色：较高
+    } else if (count >= 1) {
+      return 'info'; // 蓝色：一般
     } else {
       return 'default'; // 默认
     }
@@ -94,16 +92,6 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
       minute: '2-digit'
     });
   };
-
-  // 计算总工时（如果没有传入totalWorkHours则从issueDetails计算）
-  const calculatedTotalWorkHours = totalWorkHours !== undefined 
-    ? totalWorkHours 
-    : issueDetails.reduce((sum, issue) => sum + (issue.work_hours || 0), 0);
-
-  // 计算总Issue数（如果没有传入totalIssueCount则从issueDetails计算）
-  const calculatedTotalIssueCount = totalIssueCount !== undefined 
-    ? totalIssueCount 
-    : issueDetails.length;
 
   return (
     <Dialog 
@@ -122,10 +110,10 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Box>
             <Typography variant="h6" component="div">
-              {designerName} - Issue详细信息
+              {designerName} - Reopen详细信息
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-              设计Issue总数: {calculatedTotalIssueCount} 个 | 总工时: {calculatedTotalWorkHours.toFixed(1)} 小时
+              总Reopen次数: {totalReopenCount} 次 | 包含 {reopenDetails.length} 个Issue
             </Typography>
           </Box>
           <IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
@@ -137,12 +125,12 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
       <DialogContent dividers>
         {loading ? (
           <Box display="flex" justifyContent="center" alignItems="center" minHeight="300px">
-            <CircularProgress size={40} sx={{ color: '#0284c7' }} />
+            <CircularProgress size={40} sx={{ color: '#e11d48' }} />
           </Box>
-        ) : issueDetails.length === 0 ? (
+        ) : reopenDetails.length === 0 ? (
           <Box display="flex" justifyContent="center" alignItems="center" minHeight="300px">
             <Typography variant="h6" color="textSecondary">
-              暂无Issue数据
+              暂无Reopen数据
             </Typography>
           </Box>
         ) : (
@@ -157,14 +145,13 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
                   <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>状态</TableCell>
                   <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>优先级</TableCell>
                   <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>经办人</TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>工时</TableCell>
+                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>Reopen次数</TableCell>
                   <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>创建时间</TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>更新时间</TableCell>
                   <TableCell sx={{ fontWeight: 600, backgroundColor: '#f8fafc' }}>操作</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {issueDetails.map((issue, index) => (
+                {reopenDetails.map((issue, index) => (
                   <TableRow key={issue.issue_id} hover>
                     <TableCell>
                       <Typography variant="body2" fontWeight="600" color="primary">
@@ -224,27 +211,19 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Box display="flex" alignItems="center" gap={0.5}>
-                        <AccessTimeIcon fontSize="small" sx={{ color: '#64748b' }} />
-                        <Chip 
-                          label={`${issue.work_hours?.toFixed(1) || '0.0'}h`}
-                          size="small" 
-                          color={getWorkHoursColor(issue.work_hours || 0) as any}
-                          sx={{ 
-                            fontSize: '0.75rem',
-                            fontWeight: 600
-                          }}
-                        />
-                      </Box>
+                      <Chip 
+                        label={`${issue.reopen_count} 次`}
+                        size="small" 
+                        color={getReopenColor(issue.reopen_count) as any}
+                        sx={{ 
+                          fontSize: '0.75rem',
+                          fontWeight: 600
+                        }}
+                      />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="textSecondary">
                         {formatDate(issue.created_date)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="textSecondary">
-                        {formatDate(issue.updated_date)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -277,4 +256,4 @@ const DesignerIssueDetailsDialog: React.FC<DesignerIssueDetailsDialogProps> = ({
   );
 };
 
-export default DesignerIssueDetailsDialog; 
+export default DesignerReopenDetailsDialog; 

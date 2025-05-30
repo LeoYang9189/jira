@@ -191,6 +191,32 @@ export interface DesignerIssueDetail {
   work_hours: number;
 }
 
+// 产品经理指标接口
+export interface ProductManagerMetrics {
+  designer_name: string;
+  design_issue_count: number;
+  total_work_hours: number;
+  total_reopen_count: number;
+  reopen_rate: number;
+}
+
+// 设计师Reopen详细信息接口
+export interface DesignerReopenDetail {
+  issue_id: number;
+  issue_key: string;
+  issue_title: string;
+  created_date: string;
+  updated_date: string;
+  project_name: string;
+  project_key: string;
+  issue_type: string;
+  status: string;
+  priority: string;
+  assignee: string;
+  designer_name: string;
+  reopen_count: number;
+}
+
 // API服务类
 class ApiService {
   
@@ -331,6 +357,35 @@ class ApiService {
   ): Promise<DesignerIssueDetail[]> {
     const queryParams = this.buildQueryParams(filters || {});
     const response = await apiClient.get<ApiResponse<DesignerIssueDetail[]>>(`/designers/${encodeURIComponent(designerName)}/issues${queryParams}`);
+    return response.data.data;
+  }
+
+  // 获取产品经理指标（单个设计师）
+  async getProductManagerMetrics(
+    designerName: string,
+    filters: FilterParams = {}
+  ): Promise<ProductManagerMetrics> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<ProductManagerMetrics>>(`/product-manager/metrics/${encodeURIComponent(designerName)}${queryParams}`);
+    return response.data.data;
+  }
+
+  // 获取所有产品经理指标（批量）
+  async getAllProductManagerMetrics(
+    filters: FilterParams = {}
+  ): Promise<ProductManagerMetrics[]> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<ProductManagerMetrics[]>>(`/product-manager/metrics${queryParams}`);
+    return response.data.data;
+  }
+
+  // 获取指定设计人员的Reopen详细信息
+  async getDesignerReopenDetails(
+    designerName: string,
+    filters: FilterParams = {}
+  ): Promise<DesignerReopenDetail[]> {
+    const queryParams = this.buildQueryParams(filters || {});
+    const response = await apiClient.get<ApiResponse<DesignerReopenDetail[]>>(`/designers/${encodeURIComponent(designerName)}/reopen-details${queryParams}`);
     return response.data.data;
   }
 }

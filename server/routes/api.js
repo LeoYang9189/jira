@@ -338,6 +338,135 @@ router.get('/designers/:designerName/issues', handleAsync(async (req, res) => {
   });
 }));
 
+// 获取产品经理指标（单个设计师）
+router.get('/product-manager/metrics/:designerName', handleAsync(async (req, res) => {
+  const { designerName } = req.params;
+  const { 
+    startDate, 
+    endDate, 
+    dateTimeType = 'created',
+    issueTypes,
+    projects,
+    assignees
+  } = req.query;
+
+  console.log('API: 获取产品经理指标', {
+    designerName,
+    startDate,
+    endDate,
+    dateTimeType,
+    issueTypes,
+    projects,
+    assignees
+  });
+
+  // 使用统一的参数解析函数
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+
+  const metrics = await jiraDataService.getProductManagerMetrics(
+    decodeURIComponent(designerName),
+    startDate,
+    endDate,
+    dateTimeType,
+    parsedIssueTypes,
+    parsedProjects,
+    parsedAssignees
+  );
+
+  res.json({
+    success: true,
+    data: metrics,
+    message: `成功获取${designerName}的产品经理指标`
+  });
+}));
+
+// 获取所有产品经理指标（批量）
+router.get('/product-manager/metrics', handleAsync(async (req, res) => {
+  const { 
+    startDate, 
+    endDate, 
+    dateTimeType = 'created',
+    issueTypes,
+    projects,
+    assignees
+  } = req.query;
+
+  console.log('API: 批量获取产品经理指标', {
+    startDate,
+    endDate,
+    dateTimeType,
+    issueTypes,
+    projects,
+    assignees
+  });
+
+  // 使用统一的参数解析函数
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+
+  const allMetrics = await jiraDataService.getAllProductManagerMetrics(
+    startDate,
+    endDate,
+    dateTimeType,
+    parsedIssueTypes,
+    parsedProjects,
+    parsedAssignees
+  );
+
+  res.json({
+    success: true,
+    data: allMetrics,
+    message: '成功获取所有产品经理指标'
+  });
+}));
+
+// 获取指定设计人员的Reopen详细信息
+router.get('/designers/:designerName/reopen-details', handleAsync(async (req, res) => {
+  const { designerName } = req.params;
+  const { 
+    startDate, 
+    endDate, 
+    dateTimeType = 'created',
+    issueTypes,
+    projects,
+    assignees
+  } = req.query;
+
+  console.log('API: 获取设计人员Reopen详细信息', {
+    designerName,
+    startDate,
+    endDate,
+    dateTimeType,
+    issueTypes,
+    projects,
+    assignees
+  });
+
+  // 使用统一的参数解析函数
+  const parsedIssueTypes = parseIssueTypes(issueTypes);
+  const parsedProjects = parseProjects(projects);
+  const parsedAssignees = parseAssignees(assignees);
+
+  const reopenDetails = await jiraDataService.getDesignerReopenDetails(
+    decodeURIComponent(designerName),
+    startDate,
+    endDate,
+    dateTimeType,
+    parsedIssueTypes,
+    parsedProjects,
+    parsedAssignees
+  );
+
+  res.json({
+    success: true,
+    data: reopenDetails,
+    message: `成功获取${designerName}的Reopen详细信息`
+  });
+}));
+
 // 错误处理中间件
 router.use((error, req, res, next) => {
   console.error('API错误:', error);

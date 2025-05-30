@@ -870,161 +870,126 @@ class JiraDataService {
   // 获取设计人员对应的实际开发工时统计
   async getDesignerWorkHoursStats(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
     try {
+      console.log('🔄 重新实现设计师工时统计查询');
+      
       const connection = await pool.getConnection();
       
-      // 根据时间类型构建不同的查询策略
-      let timeFilter = '';
-      let baseQuery = '';
+      // 第一步：获取符合筛选条件的issues
+      const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
       
-      if (dateTimeType === 'created') {
-        // 基于issue创建时间的筛选
-        const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
-        
-        baseQuery = `
-          SELECT 
-            designer_ci.NEWSTRING as designer_name,
-            SUM(CAST(latest_workhours.latest_hours AS DECIMAL(10,2))) as total_work_hours
-          FROM changegroup designer_cg
-          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
-          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
-          LEFT JOIN project p ON j.PROJECT = p.ID
-          INNER JOIN (
-            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
-            SELECT 
-              cg1.issueid,
-              ci1.NEWSTRING as latest_hours
-            FROM changegroup cg1
-            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
-            WHERE ci1.FIELDTYPE = 'custom' 
-              AND ci1.FIELD = '实际开发工时(H)'
-              AND ci1.NEWSTRING IS NOT NULL 
-              AND ci1.NEWSTRING != ''
-              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
-              AND cg1.CREATED = (
-                SELECT MAX(cg2.CREATED)
-                FROM changegroup cg2
-                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
-                WHERE ci2.FIELDTYPE = 'custom' 
-                  AND ci2.FIELD = '实际开发工时(H)'
-                  AND ci2.NEWSTRING IS NOT NULL 
-                  AND ci2.NEWSTRING != ''
-                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
-                  AND cg2.issueid = cg1.issueid
-              )
-          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
-          WHERE designer_ci.FIELDTYPE = 'custom' 
-            AND designer_ci.FIELD = '设计人员'
-            AND designer_ci.NEWSTRING IS NOT NULL 
-            AND designer_ci.NEWSTRING != ''
-            ${filters}
-          GROUP BY designer_ci.NEWSTRING
-          HAVING total_work_hours > 0
-          ORDER BY total_work_hours DESC
-          LIMIT 20
-        `;
-      } else {
-        // 基于自定义时间字段的筛选
-        const fieldNameMap = {
-          'completed_design': '完成时间(设计)',
-          'closed': '关闭时间', 
-          'actual_release': '实际发布日'
-        };
-        
-        const fieldName = fieldNameMap[dateTimeType];
-        if (!fieldName) {
-          connection.release();
-          return [];
-        }
-        
-        // 构建项目和类型筛选条件
-        const projectFilter = this.buildProjectFilter(projects);
-        const typeFilter = this.buildIssueTypeFilter(issueTypes);
-        const assigneeFilter = this.buildAssigneeFilter(assignees);
-        
-        // 构建时间筛选条件
-        if (startDate && endDate) {
-          timeFilter = `AND time_cg.CREATED BETWEEN '${startDate}' AND '${endDate} 23:59:59'`;
-        } else if (startDate) {
-          timeFilter = `AND time_cg.CREATED >= '${startDate}'`;
-        } else if (endDate) {
-          timeFilter = `AND time_cg.CREATED <= '${endDate} 23:59:59'`;
-        }
-        
-        baseQuery = `
-          SELECT 
-            designer_ci.NEWSTRING as designer_name,
-            SUM(CAST(latest_workhours.latest_hours AS DECIMAL(10,2))) as total_work_hours
-          FROM changegroup designer_cg
-          INNER JOIN changeitem designer_ci ON designer_cg.ID = designer_ci.groupid
-          INNER JOIN jiraissue j ON designer_cg.issueid = j.ID
-          LEFT JOIN project p ON j.PROJECT = p.ID
-          INNER JOIN (
-            -- 获取每个issue的最新工时记录(使用MySQL兼容的方式)
-            SELECT 
-              cg1.issueid,
-              ci1.NEWSTRING as latest_hours
-            FROM changegroup cg1
-            INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
-            WHERE ci1.FIELDTYPE = 'custom' 
-              AND ci1.FIELD = '实际开发工时(H)'
-              AND ci1.NEWSTRING IS NOT NULL 
-              AND ci1.NEWSTRING != ''
-              AND ci1.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
-              AND cg1.CREATED = (
-                SELECT MAX(cg2.CREATED)
-                FROM changegroup cg2
-                INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
-                WHERE ci2.FIELDTYPE = 'custom' 
-                  AND ci2.FIELD = '实际开发工时(H)'
-                  AND ci2.NEWSTRING IS NOT NULL 
-                  AND ci2.NEWSTRING != ''
-                  AND ci2.NEWSTRING REGEXP '^[0-9]+\.?[0-9]*$'
-                  AND cg2.issueid = cg1.issueid
-              )
-          ) latest_workhours ON designer_cg.issueid = latest_workhours.issueid
-          WHERE designer_ci.FIELDTYPE = 'custom' 
-            AND designer_ci.FIELD = '设计人员'
-            AND designer_ci.NEWSTRING IS NOT NULL 
-            AND designer_ci.NEWSTRING != ''
-            AND designer_cg.issueid IN (
-              SELECT DISTINCT time_cg.issueid 
-              FROM changegroup time_cg 
-              INNER JOIN changeitem time_ci ON time_cg.ID = time_ci.groupid 
-              INNER JOIN jiraissue time_j ON time_cg.issueid = time_j.ID
-              LEFT JOIN project time_p ON time_j.PROJECT = time_p.ID
-              WHERE time_ci.FIELD = '${fieldName}' 
-                AND time_ci.FIELDTYPE = 'custom'
-                AND time_ci.NEWSTRING IS NOT NULL 
-                AND time_ci.NEWSTRING != ''
-                ${timeFilter}
-                ${projectFilter.replace(/p\./g, 'time_p.')}
-                ${typeFilter.replace(/j\./g, 'time_j.')}
-                ${assigneeFilter.replace(/j\./g, 'time_j.')}
-            )
-            ${projectFilter}
-            ${typeFilter}  
-            ${assigneeFilter}
-          GROUP BY designer_ci.NEWSTRING
-          HAVING total_work_hours > 0
-          ORDER BY total_work_hours DESC
-          LIMIT 20
-        `;
+      console.log('设计师工时查询 - 筛选条件:', filters);
+      
+      const issueQuery = `
+        SELECT DISTINCT j.ID, CONCAT(p.pkey, '-', j.issuenum) as issue_key
+        FROM jiraissue j
+        LEFT JOIN project p ON j.PROJECT = p.ID
+        WHERE 1=1 ${filters}
+      `;
+      
+      console.log('设计师工时查询 - 第一步，获取符合条件的issues:', issueQuery);
+      
+      const [issues] = await connection.execute(issueQuery);
+      
+      if (issues.length === 0) {
+        console.log('设计师工时查询 - 没有找到符合条件的issues');
+        connection.release();
+        return [];
       }
       
-      console.log('设计人员工时统计查询(修复重复计算):', baseQuery);
+      console.log(`设计师工时查询 - 找到 ${issues.length} 个符合条件的issues`);
       
-      const [rows] = await connection.execute(baseQuery);
+      // 获取issue IDs
+      const issueIds = issues.map(issue => issue.ID);
+      const issueIdsStr = issueIds.join(',');
+      
+      // 第二步：获取这些issues的设计人员和工时信息
+      const workHoursQuery = `
+        SELECT 
+          designer_changes.designer_name,
+          workhours_changes.issue_id,
+          workhours_changes.work_hours
+        FROM (
+          -- 获取设计人员信息
+          SELECT DISTINCT
+            cg.issueid,
+            ci.NEWSTRING as designer_name
+          FROM changegroup cg
+          INNER JOIN changeitem ci ON cg.ID = ci.groupid
+          WHERE ci.FIELDTYPE = 'custom' 
+            AND ci.FIELD = '设计人员'
+            AND ci.NEWSTRING IS NOT NULL 
+            AND ci.NEWSTRING != ''
+            AND cg.issueid IN (${issueIdsStr})
+        ) designer_changes
+        INNER JOIN (
+          -- 获取工时信息（每个issue的最新工时）
+          SELECT 
+            main_cg.issueid as issue_id,
+            CAST(main_ci.NEWSTRING AS DECIMAL(10,2)) as work_hours
+          FROM changegroup main_cg
+          INNER JOIN changeitem main_ci ON main_cg.ID = main_ci.groupid
+          WHERE main_ci.FIELDTYPE = 'custom' 
+            AND main_ci.FIELD = '实际开发工时(H)'
+            AND main_ci.NEWSTRING IS NOT NULL 
+            AND main_ci.NEWSTRING != ''
+            AND main_ci.NEWSTRING REGEXP '^[0-9]+\\.?[0-9]*$'
+            AND main_cg.issueid IN (${issueIdsStr})
+            AND main_cg.CREATED = (
+              SELECT MAX(sub_cg.CREATED)
+              FROM changegroup sub_cg
+              INNER JOIN changeitem sub_ci ON sub_cg.ID = sub_ci.groupid
+              WHERE sub_ci.FIELDTYPE = 'custom' 
+                AND sub_ci.FIELD = '实际开发工时(H)'
+                AND sub_ci.NEWSTRING IS NOT NULL 
+                AND sub_ci.NEWSTRING != ''
+                AND sub_ci.NEWSTRING REGEXP '^[0-9]+\\.?[0-9]*$'
+                AND sub_cg.issueid = main_cg.issueid
+            )
+        ) workhours_changes ON designer_changes.issueid = workhours_changes.issue_id
+        WHERE workhours_changes.work_hours > 0
+      `;
+      
+      console.log('设计师工时查询 - 第二步，获取设计师和工时信息');
+      
+      const [workHoursData] = await connection.execute(workHoursQuery);
+      
+      console.log(`设计师工时查询 - 找到 ${workHoursData.length} 条工时记录`);
+      
+      // 第三步：按设计师聚合工时数据
+      const designerStats = {};
+      
+      workHoursData.forEach(row => {
+        const designerName = row.designer_name || '未设置';
+        const workHours = parseFloat(row.work_hours) || 0;
+        
+        if (!designerStats[designerName]) {
+          designerStats[designerName] = {
+            designer_name: designerName,
+            total_work_hours: 0
+          };
+        }
+        
+        designerStats[designerName].total_work_hours += workHours;
+      });
+      
+      // 转换为数组并排序
+      const result = Object.values(designerStats)
+        .filter(stat => stat.total_work_hours > 0)
+        .sort((a, b) => b.total_work_hours - a.total_work_hours)
+        .slice(0, 20); // 限制返回前20名
+      
+      console.log(`设计师工时查询 - 统计结果: ${result.length} 名设计师`);
+      result.forEach(stat => {
+        console.log(`  ${stat.designer_name}: ${stat.total_work_hours}小时`);
+      });
       
       connection.release();
+      return result;
       
-      // 返回格式化的结果
-      return rows.map(row => ({
-        designer_name: row.designer_name || '未设置',
-        total_work_hours: parseFloat(row.total_work_hours) || 0
-      }));
     } catch (error) {
       console.error('获取设计人员工时统计失败:', error);
-      throw error;
+      // 发生错误时返回空数组，而不是抛出异常
+      return [];
     }
   }
 
@@ -1044,7 +1009,7 @@ class JiraDataService {
         baseQuery = `
           SELECT DISTINCT
             j.ID as issue_id,
-            j.pkey as issue_key,
+            CONCAT(p.pkey, '-', j.issuenum) as issue_key,
             j.SUMMARY as issue_title,
             j.CREATED as created_date,
             j.UPDATED as updated_date,
@@ -1124,7 +1089,7 @@ class JiraDataService {
         baseQuery = `
           SELECT DISTINCT
             j.ID as issue_id,
-            j.pkey as issue_key,
+            CONCAT(p.pkey, '-', j.issuenum) as issue_key,
             j.SUMMARY as issue_title,
             j.CREATED as created_date,
             j.UPDATED as updated_date,
@@ -1192,7 +1157,7 @@ class JiraDataService {
         `;
       }
       
-      console.log('设计人员详细issue查询(修复重复计算):', baseQuery);
+      console.log('设计人员详细issue查询(修复issue_key):', baseQuery);
       
       const [rows] = await connection.execute(baseQuery);
       
@@ -1217,6 +1182,268 @@ class JiraDataService {
     } catch (error) {
       console.error('获取设计人员详细issue信息失败:', error);
       throw error;
+    }
+  }
+
+  // 获取产品经理指标卡数据（修正版：只计算最新设计师的reopen - MySQL兼容版）
+  async getProductManagerMetrics(designerName, startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      console.log(`🔄 获取产品经理指标: ${designerName}`);
+      
+      const connection = await pool.getConnection();
+      
+      // 构建基础筛选条件
+      const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
+      
+      console.log('产品经理指标查询 - 筛选条件:', filters);
+      
+      // MySQL兼容版：获取该设计师作为最新设计师的issues
+      const baseQuery = `
+        SELECT DISTINCT latest_designer.issue_id
+        FROM (
+          SELECT 
+            cg1.issueid as issue_id,
+            ci1.NEWSTRING as designer_name
+          FROM changegroup cg1
+          INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+          INNER JOIN jiraissue j ON cg1.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          WHERE ci1.FIELDTYPE = 'custom' 
+            AND ci1.FIELD = '设计人员'
+            AND ci1.NEWSTRING IS NOT NULL 
+            AND ci1.NEWSTRING != ''
+            AND cg1.CREATED = (
+              -- 获取每个issue的最新设计师变更时间
+              SELECT MAX(cg2.CREATED)
+              FROM changegroup cg2
+              INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+              WHERE ci2.FIELDTYPE = 'custom' 
+                AND ci2.FIELD = '设计人员'
+                AND ci2.NEWSTRING IS NOT NULL 
+                AND ci2.NEWSTRING != ''
+                AND cg2.issueid = cg1.issueid
+            )
+            ${filters}
+        ) latest_designer
+        WHERE latest_designer.designer_name = '${designerName}'
+      `;
+      
+      console.log('产品经理指标查询 - 获取最新设计师的issue（MySQL兼容版）:', baseQuery);
+      
+      const [issuesList] = await connection.execute(baseQuery);
+      const designIssueCount = issuesList.length;
+      
+      if (designIssueCount === 0) {
+        console.log(`产品经理指标结果 - ${designerName}: 无相关issue（作为最新设计师）`);
+        connection.release();
+        return {
+          designer_name: designerName,
+          design_issue_count: 0,
+          total_work_hours: 0,
+          total_reopen_count: 0,
+          reopen_rate: 0
+        };
+      }
+      
+      // 获取这些issues的工时统计
+      const issueIds = issuesList.map(row => row.issue_id);
+      const idsString = issueIds.join(',');
+      
+      const workHoursQuery = `
+        SELECT SUM(CAST(ci.NEWSTRING AS DECIMAL(10,2))) as total_work_hours
+        FROM changegroup cg
+        INNER JOIN changeitem ci ON cg.ID = ci.groupid
+        WHERE ci.FIELDTYPE = 'custom' 
+          AND ci.FIELD = '实际开发工时(H)'
+          AND ci.NEWSTRING IS NOT NULL 
+          AND ci.NEWSTRING != ''
+          AND ci.NEWSTRING REGEXP '^[0-9]+\\.?[0-9]*$'
+          AND cg.issueid IN (${idsString})
+      `;
+      
+      console.log('产品经理指标查询 - 工时统计');
+      const [workHoursResult] = await connection.execute(workHoursQuery);
+      const totalWorkHours = parseFloat(workHoursResult[0]?.total_work_hours) || 0;
+      
+      // 获取Reopen次数（只计算最新设计师负责的issue）
+      const reopenQuery = `
+        SELECT SUM(CAST(ci.NEWSTRING AS DECIMAL(10,2))) as total_reopen_count
+        FROM changegroup cg
+        INNER JOIN changeitem ci ON cg.ID = ci.groupid
+        WHERE ci.FIELDTYPE = 'custom' 
+          AND ci.FIELD = 'reopen次数(设计)'
+          AND ci.NEWSTRING IS NOT NULL 
+          AND ci.NEWSTRING != ''
+          AND ci.NEWSTRING REGEXP '^[0-9]+\\.?[0-9]*$'
+          AND cg.issueid IN (${idsString})
+      `;
+      
+      console.log('产品经理指标查询 - Reopen统计（仅最新设计师负责的issue）');
+      const [reopenResult] = await connection.execute(reopenQuery);
+      const totalReopenCount = parseFloat(reopenResult[0]?.total_reopen_count) || 0;
+      
+      connection.release();
+      
+      // 计算Reopen率
+      const reopenRate = designIssueCount > 0 ? ((totalReopenCount / designIssueCount) * 100) : 0;
+      
+      const result = {
+        designer_name: designerName,
+        design_issue_count: designIssueCount,
+        total_work_hours: totalWorkHours,
+        total_reopen_count: totalReopenCount,
+        reopen_rate: Math.round(reopenRate * 100) / 100 // 保留2位小数
+      };
+      
+      console.log(`产品经理指标结果 - ${designerName}（仅最新设计师）:`, result);
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`获取产品经理指标失败 - ${designerName}:`, error);
+      // 返回默认值而不是抛出异常
+      return {
+        designer_name: designerName,
+        design_issue_count: 0,
+        total_work_hours: 0,
+        total_reopen_count: 0,
+        reopen_rate: 0
+      };
+    }
+  }
+
+  // 获取所有产品经理指标（批量）
+  async getAllProductManagerMetrics(startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      // 关注的设计师列表
+      const targetDesigners = ['Neal', '杨琪磊', '李佳琦', '朱俊阳', '杨辰吉', '洪婉秋'];
+      
+      console.log('🔄 批量获取产品经理指标');
+      
+      // 并行获取所有设计师的指标
+      const metricsPromises = targetDesigners.map(designer => 
+        this.getProductManagerMetrics(designer, startDate, endDate, dateTimeType, issueTypes, projects, assignees)
+      );
+      
+      const allMetrics = await Promise.all(metricsPromises);
+      
+      console.log('批量产品经理指标结果:', allMetrics);
+      
+      return allMetrics;
+      
+    } catch (error) {
+      console.error('批量获取产品经理指标失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取设计师Reopen详细信息（修正版：只显示最新设计师的reopen - MySQL兼容版）
+  async getDesignerReopenDetails(designerName, startDate = null, endDate = null, dateTimeType = 'created', issueTypes = null, projects = null, assignees = null) {
+    try {
+      console.log(`🔄 获取设计师Reopen详细信息: ${designerName}`);
+      
+      const connection = await pool.getConnection();
+      
+      // 构建基础筛选条件
+      const filters = this.buildFilters(startDate, endDate, dateTimeType, issueTypes, projects, assignees);
+      
+      console.log('设计师Reopen详细信息查询 - 筛选条件:', filters);
+      
+      // MySQL兼容版：只获取该设计师作为最新设计师且有Reopen记录的issues详细信息
+      const reopenDetailsQuery = `
+        SELECT DISTINCT
+          j.ID as issue_id,
+          CONCAT(p.pkey, '-', j.issuenum) as issue_key,
+          j.SUMMARY as issue_title,
+          j.CREATED as created_date,
+          j.UPDATED as updated_date,
+          p.pname as project_name,
+          p.pkey as project_key,
+          it.pname as issue_type,
+          s.pname as status,
+          prio.pname as priority,
+          j.ASSIGNEE as assignee,
+          latest_designer.designer_name,
+          CAST(reopen_ci.NEWSTRING AS DECIMAL(10,2)) as reopen_count
+        FROM (
+          -- 获取每个issue的最新设计师（MySQL兼容版）
+          SELECT 
+            cg1.issueid,
+            ci1.NEWSTRING as designer_name
+          FROM changegroup cg1
+          INNER JOIN changeitem ci1 ON cg1.ID = ci1.groupid
+          INNER JOIN jiraissue j ON cg1.issueid = j.ID
+          LEFT JOIN project p ON j.PROJECT = p.ID
+          WHERE ci1.FIELDTYPE = 'custom' 
+            AND ci1.FIELD = '设计人员'
+            AND ci1.NEWSTRING IS NOT NULL 
+            AND ci1.NEWSTRING != ''
+            AND cg1.CREATED = (
+              -- 获取每个issue的最新设计师变更时间
+              SELECT MAX(cg2.CREATED)
+              FROM changegroup cg2
+              INNER JOIN changeitem ci2 ON cg2.ID = ci2.groupid
+              WHERE ci2.FIELDTYPE = 'custom' 
+                AND ci2.FIELD = '设计人员'
+                AND ci2.NEWSTRING IS NOT NULL 
+                AND ci2.NEWSTRING != ''
+                AND cg2.issueid = cg1.issueid
+            )
+            ${filters}
+        ) latest_designer
+        INNER JOIN jiraissue j ON latest_designer.issueid = j.ID
+        LEFT JOIN project p ON j.PROJECT = p.ID
+        LEFT JOIN issuetype it ON j.issuetype = it.ID
+        LEFT JOIN issuestatus s ON j.issuestatus = s.ID
+        LEFT JOIN priority prio ON j.PRIORITY = prio.ID
+        INNER JOIN (
+          -- 获取每个issue的Reopen次数
+          SELECT 
+            cg.issueid,
+            ci.NEWSTRING
+          FROM changegroup cg
+          INNER JOIN changeitem ci ON cg.ID = ci.groupid
+          WHERE ci.FIELDTYPE = 'custom' 
+            AND ci.FIELD = 'reopen次数(设计)'
+            AND ci.NEWSTRING IS NOT NULL 
+            AND ci.NEWSTRING != ''
+            AND ci.NEWSTRING REGEXP '^[0-9]+\\.?[0-9]*$'
+            AND CAST(ci.NEWSTRING AS DECIMAL(10,2)) > 0
+        ) reopen_ci ON latest_designer.issueid = reopen_ci.issueid
+        WHERE latest_designer.designer_name = '${designerName}'
+        ORDER BY reopen_count DESC, j.CREATED DESC
+      `;
+      
+      console.log('设计师Reopen详细信息查询（仅最新设计师 - MySQL兼容版）:', reopenDetailsQuery);
+      
+      const [rows] = await connection.execute(reopenDetailsQuery);
+      
+      connection.release();
+      
+      // 返回格式化的结果
+      const result = rows.map(row => ({
+        issue_id: row.issue_id,
+        issue_key: row.issue_key,
+        issue_title: row.issue_title || '无标题',
+        created_date: row.created_date,
+        updated_date: row.updated_date,
+        project_name: row.project_name || '未知项目',
+        project_key: row.project_key || '',
+        issue_type: row.issue_type || '未知类型',
+        status: row.status || '未知状态',
+        priority: row.priority || '未设置',
+        assignee: row.assignee || '未分配',
+        designer_name: row.designer_name,
+        reopen_count: parseFloat(row.reopen_count) || 0
+      }));
+      
+      console.log(`设计师Reopen详细信息结果 - ${designerName}（仅最新设计师）:`, result.length, '条记录');
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`获取设计师Reopen详细信息失败 - ${designerName}:`, error);
+      return [];
     }
   }
 }

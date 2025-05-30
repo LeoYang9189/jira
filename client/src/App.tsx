@@ -21,7 +21,10 @@ import EChartsPriorityPieChart from './components/Charts/EChartsPriorityPieChart
 import EChartsProjectPieChart from './components/Charts/EChartsProjectPieChart';
 import EChartsDesignerBarChart from './components/Charts/EChartsDesignerBarChart';
 import EChartsDesignerWorkHoursChart from './components/Charts/EChartsDesignerWorkHoursChart';
+import ProductManagerMetricsCard from './components/Charts/ProductManagerMetricsCard';
 import DateRangeSelector, { DateTimeType } from './components/Common/DateRangeSelector';
+import PrintReportButton, { PrintDimension } from './components/Common/PrintReportButton';
+import PrintService from './services/printService';
 
 // 现代主题配置 - 低饱和度浅蓝色系
 const theme = createTheme({
@@ -181,6 +184,9 @@ function App() {
   // 当前筛选参数
   const [currentFilters, setCurrentFilters] = useState<FilterParams>({});
 
+  // 打印相关状态
+  const [printLoading, setPrintLoading] = useState(false);
+
   // 加载仪表板摘要
   const loadDashboardSummary = async (filters: FilterParams = {}) => {
     try {
@@ -242,6 +248,27 @@ function App() {
     } catch (error) {
       console.error('加载设计师工作时间数据失败:', error);
     }
+  };
+
+  // 构建当前筛选条件
+  const buildFilters = (): FilterParams => {
+    const filters: FilterParams = {
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      dateTimeType: dateTimeType
+    };
+
+    // 如果开启了CW项目模式，自动添加CW项目筛选
+    if (cwProjectsOnly) {
+      filters.projects = CW_PROJECT_IDS;
+    }
+
+    // 如果开启了需求类型模式，自动添加需求类型筛选
+    if (requirementTypesOnly) {
+      filters.issueTypes = REQUIREMENT_TYPE_IDS;
+    }
+
+    return filters;
   };
 
   // 处理筛选变化
@@ -361,6 +388,46 @@ function App() {
       loadProjectStats(newFilters),
       loadDesignerWorkload(newFilters),
       loadDesignerWorkHours(newFilters)
+    ]);
+  };
+
+  // 处理打印报告
+  const handlePrintReport = async (dimension: PrintDimension) => {
+    try {
+      setPrintLoading(true);
+      console.log(`🖨️ 开始打印${dimension === 'all' ? '全部维度' : dimension}报告...`);
+      
+      // 定义维度变更处理函数
+      const handleDimensionChange = async (newDateTimeType: DateTimeType) => {
+        setDateTimeType(newDateTimeType);
+        await new Promise(resolve => setTimeout(resolve, 100)); // 短暂延时等待状态更新
+        await loadAllData(); // 重新加载所有数据
+      };
+
+      // 调用打印服务
+      await PrintService.printReport(dimension, handleDimensionChange);
+      
+      console.log('✅ 报告生成完成');
+    } catch (error) {
+      console.error('❌ 打印报告失败:', error);
+      alert('打印报告时发生错误，请重试');
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  // 加载所有数据的统一方法
+  const loadAllData = async () => {
+    const filters = buildFilters();
+    
+    // 并行加载所有数据
+    await Promise.all([
+      loadDashboardSummary(filters),
+      loadTrendData(filters),
+      loadPriorityData(filters),
+      loadProjectStats(filters),
+      loadDesignerWorkload(filters),
+      loadDesignerWorkHours(filters)
     ]);
   };
 
@@ -495,6 +562,12 @@ function App() {
                   }
                 }}
               />
+
+              {/* 打印报告按钮 */}
+              <PrintReportButton
+                onPrint={handlePrintReport}
+                loading={printLoading}
+              />
             </Stack>
           </Toolbar>
         </AppBar>
@@ -502,6 +575,7 @@ function App() {
         {/* 主要内容区域 */}
         <Box
           component="main"
+          data-print-content
           sx={{
             flexGrow: 1,
             pt: 10,
@@ -573,12 +647,20 @@ function App() {
                 />
               </Box>
             </Box>
+
+            <Box sx={{ mb: 4 }}>
+              {/* 产品经理指标卡 */}
+              <ProductManagerMetricsCard
+                filters={currentFilters}
+                loading={loading}
+              />
+            </Box>
           </Container>
         </Box>
 
         {/* 加载遮罩 */}
         <Backdrop
-          open={loading}
+          open={loading || printLoading}
           sx={{
             color: '#0284c7',
             zIndex: (theme) => theme.zIndex.modal + 1,
@@ -589,7 +671,7 @@ function App() {
           <Box textAlign="center">
             <CircularProgress color="inherit" />
             <Typography variant="body1" sx={{ mt: 2, color: '#334155' }}>
-              正在更新数据...
+              {printLoading ? '正在生成PDF报告...' : '正在更新数据...'}
             </Typography>
           </Box>
         </Backdrop>

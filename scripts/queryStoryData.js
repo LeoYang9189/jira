@@ -41,7 +41,7 @@ async function queryStoryData() {
     const [storyData] = await connection.execute(`
       SELECT 
         j.ID,
-        j.pkey as issue_key,
+        CONCAT(p.pkey, '-', j.issuenum) as issue_key,
         j.SUMMARY as title,
         j.CREATED as created_date,
         j.UPDATED as updated_date,
@@ -144,7 +144,7 @@ console.log(`
 -- 查询2025年1月1日到5月30日之间的故事类型数据（CARGO项目）
 SELECT 
   j.ID,
-  j.pkey as issue_key,
+  CONCAT(p.pkey, '-', j.issuenum) as issue_key,
   j.SUMMARY as title,
   j.CREATED as created_date,
   j.UPDATED as updated_date,
